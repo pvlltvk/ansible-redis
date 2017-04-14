@@ -6,21 +6,26 @@
     recurse: yes
     owner: "{{ redis_user }}"
 
-- name: create redis init script
+- name: create runit directory
+  file:
+    path: "/etc/sv/{{ redis_service_name }}"
+    state: directory
+    recurse: yes
+    owner: root
+  when: redis_as_service and ansible_service_mgr|default() != "systemd"
+  
+- name: create redis runit service
   template:
-    src: "{{ item }}"
-    dest: /etc/init.d/{{ redis_service_name }}
+    src: redis.sv.run.j2
+    dest: /etc/sv/{{ redis_service_name }}/run
     mode: 0755
-  # Choose the distro-specific template. We must specify the templates
-  # path here because with_first_found tries to find files in files/
-  with_first_found:
-    - files:
-      - "{{ ansible_os_family }}/redis.init.j2"
-      - default/redis.init.j2
-      paths:
-        - ../templates
+  register: redis_unit_file
   when: redis_as_service and ansible_service_mgr|default() != "systemd"
 
+- name: enable runit server
+  file: src=/etc/sv/{{ redis_service_name }} dest=/etc/service/{{ redis_service_name }} state=link
+  when: redis_as_service and ansible_service_mgr|default() != "systemd"
+  
 - name: create redis systemd service
   template:
     src: "{{ item }}"
@@ -56,8 +61,8 @@
   service:
     name: "{{ redis_service_name }}"
     enabled: yes
-  when: redis_as_service
-
+  when: redis_as_service and ansible_service_mgr|default() == "systemd"
+  
 # Check then create log dir to prevent aggressively overwriting permissions
 - name: check if log directory exists
   stat:
@@ -100,14 +105,33 @@
   when:
     - redis_pidfile != '""'
     - not piddir.stat.exists
+    
+- name: check if config  directory exists
+  stat:
+    path: /etc/redis/{{ redis_cluster_name }}
+  register: configdir
+  changed_when: false
+  when: redis_cluster_name != '""'
+
+- name: create config directory if it does not exist
+  file:
+    state: directory
+    path: /etc/redis/{{ redis_cluster_name }}
+    owner: "{{ redis_user }}"
+    group: "{{ redis_group }}"
+  when:
+    - redis_pidfile != '""'
+    - not configdir.stat.exists
 
 - name: create redis config file
   template:
     src: redis.conf.j2
-    dest: /etc/redis/{{ redis_port }}.conf
+    dest: /etc/redis/{{redis_cluster_name}}/redis.conf
     owner: "{{ redis_user }}"
     mode: 0640
-  notify: "restart redis {{ redis_port }}"
+  notify:
+    - "restart redis systemd {{ redis_port }}"
+    - "restart redis runit {{ redis_port }}"
 
 - name: add redis init config file
   template:
@@ -115,23 +139,22 @@
     src: redis.init.conf.j2
     mode: 0600
   when: ansible_os_family == "RedHat"
-  notify: "restart redis {{ redis_port }}"
-
-- name: add redis init config file
-  template:
-    dest: /etc/default/{{ redis_service_name }}
-    src: redis.init.conf.j2
-    mode: 0600
-  when: ansible_os_family == "Debian"
-  notify: "restart redis {{ redis_port }}"
-
+  notify:
+    - "restart redis systemd {{ redis_port }}"
+    - "restart redis runit {{ redis_port }}"
+    
 # Flush handlers before ensuring the service is started to prevent
 # a start and then restart
 - name: flush handlers to apply config changes
   meta: flush_handlers
 
-- name: ensure redis is running
+- name: ensure redis is running with systemd
   service:
     name: "{{ redis_service_name }}"
     state: started
-  when: redis_as_service
+  when: redis_as_service and ansible_service_mgr|default() == "systemd"
+
+- name: ensure redis is running with runit
+  command:  sv start "{{ redis_service_name }}"
+  when: redis_as_service and ansible_service_mgr|default() != "systemd"
+

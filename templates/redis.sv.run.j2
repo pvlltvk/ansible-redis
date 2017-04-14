@@ -1,0 +1,11 @@
+#!/bin/bash
+set -e
+
+CLUSTER_NAME="{{ redis_cluster_name }}"
+PID_FILE="{{ redis_pidfile }}"
+
+cd /etc/redis/$CLUSTER_NAME
+
+test -f $PID_FILE && echo "Already running with pid: $(cat $PID_FILE)"
+
+exec chpst -u {{ redis_user }}:{{ redis_user }} {{ redis_install_dir }}/bin/redis-server /etc/redis/$CLUSTER_NAME/redis.conf

@@ -12,7 +12,7 @@
     # This should be `else omit`, but it fails on Ansible 1.x, so just duplicate gcc
     - "{{ 'libc6-dev-i386' if redis_make_32bit|bool else 'gcc' }}"
   when: ansible_os_family == "Debian"
-
+  
 - name: install redhat dependencies
   yum:
     name: "{{ item }}"
@@ -51,3 +51,33 @@
     - "{{ 'gcc-32bit' if redis_make_32bit|bool else 'gcc' }}"
     - "{{ 'libgcc_s1-32bit' if redis_make_32bit|bool else 'gcc' }}"
   when: ansible_os_family == 'Suse'
+
+- name: install runit for debian
+  apt:
+    pkg: runit
+    update_cache: yes
+    cache_valid_time: 86400
+    state: present
+  when:
+    - redis_as_service
+    - ansible_service_mgr|default() != "systemd"
+    - ansible_os_family == "Debian"
+
+- name: install runit for redhat
+  yum:
+    name: runit
+    state: present
+  when:
+    - redis_as_service
+    - ansible_service_mgr|default() != "systemd"
+    - ansible_os_family == "RedHat"
+
+- name: install runit for suse
+  zypper:
+    name: runit
+    state: present
+  when: 
+    - redis_as_service
+    - ansible_service_mgr|default() != "systemd"
+    - ansible_os_family == 'Suse'
+

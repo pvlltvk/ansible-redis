@@ -1,9 +1,13 @@
 ---
-- name: "restart redis {{ redis_port }}"
+- name: "restart redis systemd {{ redis_port }}"
   service:
     name: "{{ redis_service_name }}"
     state: restarted
-  when: redis_as_service
+  when: redis_as_service and ansible_service_mgr|default() == "systemd"
+
+- name: "restart redis runit {{ redis_port }}"
+  command:  sv restart "{{ redis_service_name }}"
+  when: redis_as_service and ansible_service_mgr|default() != "systemd"
 
 - name: "restart sentinel {{ redis_sentinel_port }}"
   service:
