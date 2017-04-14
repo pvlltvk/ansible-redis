@@ -13,7 +13,7 @@
   service:
     name: sentinel_{{ redis_cluster_name }}
     state: restarted
-  when: redis_as_serviceand ansible_service_mgr|default() == "systemd"
+  when: redis_as_service and ansible_service_mgr|default() == "systemd"
   
 - name: "restart sentinel runit {{ redis_cluster_name }}"
   command:  "sv restart sentinel_{{ redis_cluster_name }}"
