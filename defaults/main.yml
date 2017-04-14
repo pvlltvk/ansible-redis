@@ -24,6 +24,8 @@ redis_nofile_limit: 16384
 redis_as_service: true
 # Add local facts to /etc/ansible/facts.d for Redis
 redis_local_facts: true
+# Cluster name
+redis_cluster_name: "main"
 # Service name
 redis_service_name: "redis_{{ redis_port }}"
 
