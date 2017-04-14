@@ -23,7 +23,7 @@
   when: redis_as_service and ansible_service_mgr|default() != "systemd"
 
 - name: enable runit server
-  file: src=/etc/sv/sentinel_{{ redis_cluster_name }} dest=/etc/service/sentinel_{{ redis_service_name }} state=link
+  file: src=/etc/sv/sentinel_{{ redis_cluster_name }} dest=/etc/service/sentinel_{{ redis_cluster_name }} state=link
   when: redis_as_service and ansible_service_mgr|default() != "systemd"
 
 - name: create sentinel systemd service
