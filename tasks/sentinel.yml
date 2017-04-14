@@ -6,25 +6,26 @@
     recurse: yes
     owner: "{{ redis_user }}"
 
-- name: create sentinel init script
+- name: create runit directory
+  file:
+    path: "/etc/sv/sentinel_{{ redis_cluster_name }}"
+    state: directory
+    recurse: yes
+    owner: root
+  when: redis_as_service and ansible_service_mgr|default() != "systemd"
+
+- name: create redis runit service
   template:
-    src: "{{ item }}"
-    dest: /etc/init.d/sentinel_{{ redis_sentinel_port }}
+    src: sentinel.sv.run.j2
+    dest: /etc/sv/sentinel_{{ redis_cluster_name }}/run
     mode: 0755
-  # Choose the distro-specific template. We must specify the templates
-  # path here because with_first_found tries to find files in files/
-  with_first_found:
-    - files:
-      - "{{ ansible_os_family }}/redis_sentinel.init.j2"
-      - default/redis_sentinel.init.j2
-      paths:
-        - ../templates
+  register: sentinel_runit_file
   when: redis_as_service and ansible_service_mgr|default() != "systemd"
 
 - name: create sentinel systemd service
   template:
     src: "{{ item }}"
-    dest: /etc/systemd/system/sentinel_{{ redis_sentinel_port }}.service
+    dest: /etc/systemd/system/sentinel_{{ redis_cluster_name }}.service
     mode: 0644
   with_first_found:
     - files:
@@ -54,9 +55,9 @@
 
 - name: set sentinel to start at boot
   service:
-    name: sentinel_{{ redis_sentinel_port }}
+    name: sentinel_{{ redis_cluster_name }}
     enabled: yes
-  when: redis_as_service
+  when: redis_as_service and ansible_service_mgr|default() == "systemd"
 
 # Check then create log dir to prevent aggressively overwriting permissions
 - name: check if sentinel log directory exists
@@ -101,35 +102,62 @@
     - redis_sentinel_pidfile != '""'
     - not sentinel_piddir.stat.exists
 
+- name: check if config  directory exists
+  stat:
+    path: /etc/redis/{{ redis_cluster_name }}
+  register: configdir
+  changed_when: false
+  when: redis_cluster_name != '""'
+
+- name: create config directory if it does not exist
+  file:
+    state: directory
+    path: /etc/redis/{{ redis_cluster_name }}
+    owner: "{{ redis_user }}"
+    group: "{{ redis_group }}"
+  when:
+    - redis_pidfile != '""'
+    - not configdir.stat.exists    
+
 - name: create sentinel config file
   template:
     src: redis_sentinel.conf.j2
-    dest: /etc/redis/sentinel_{{ redis_sentinel_port }}.conf
+    dest: /etc/redis/{{ redis_cluster_name }}/sentinel.conf
     owner: "{{ redis_user }}"
     mode: 0640
-  notify: "restart sentinel {{ redis_sentinel_port }}"
+  notify:
+    - "restart sentinel systemd {{ redis_cluster_name }}"
+    - "restart sentinel runit {{ redis_cluster_name }}"
 
 - name: add sentinel init config file
   template:
-    dest: /etc/sysconfig/sentinel_{{ redis_sentinel_port }}
+    dest: /etc/sysconfig/sentinel_{{ redis_cluster_name }}
     src: redis.init.conf.j2
   when: ansible_os_family == "RedHat"
-  notify: "restart sentinel {{ redis_sentinel_port }}"
+  notify:
+    - "restart sentinel systemd {{ redis_cluster_name }}"
+    - "restart sentinel runit {{ redis_cluster_name }}"
 
 - name: add sentinel init config file
   template:
-    dest: /etc/default/sentinel_{{ redis_sentinel_port }}
+    dest: /etc/default/sentinel_{{ redis_cluster_name }}
     src: redis.init.conf.j2
   when: ansible_os_family == "Debian"
-  notify: "restart sentinel {{ redis_sentinel_port }}"
+  notify:
+    - "restart sentinel systemd {{ redis_cluster_name }}"
+    - "restart sentinel runit {{ redis_cluster_name }}"
 
 # Flush handlers before ensuring the service is started to prevent
 # a start and then restart
 - name: flush handlers to apply config changes
   meta: flush_handlers
 
-- name: ensure sentinel is running
+- name: ensure sentinel is running with systemd
   service:
-    name: sentinel_{{ redis_sentinel_port }}
+    name: sentinel_{{ redis_cluster_name }}
     state: started
-  when: redis_as_service
+  when: redis_as_service and ansible_service_mgr|default() == "systemd"
+
+- name: ensure sentinel is running with runit
+  command: "sv start sentinel_{{ redis_cluster_name }}"
+  when: redis_as_service and ansible_service_mgr|default() != "systemd"
