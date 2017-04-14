@@ -14,7 +14,7 @@
     owner: root
   when: redis_as_service and ansible_service_mgr|default() != "systemd"
 
-- name: create redis runit service
+- name: create sentinel runit service
   template:
     src: sentinel.sv.run.j2
     dest: /etc/sv/sentinel_{{ redis_cluster_name }}/run
